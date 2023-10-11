@@ -1,6 +1,8 @@
 import { TxInfo } from "@terra-money/terra.js";
 import num from "libs/num";
+import _ from "lodash";
 import numeral from "numeral";
+import { OperationDefinitionNode, parse, print } from "graphql";
 import { request } from "graphql-request";
 
 export const handleBigPercentage = (
@@ -84,17 +86,15 @@ export const requestInChunks = async <Item = any, Response = any>(
   items: Item[],
   queryBuilder: (chunk: Item[]) => string
 ): Promise<Response> => {
-  const totalChunks = Math.ceil(items.length / chunkSize);
+  const query = queryBuilder(items);
+  const { kind, loc, selections } = (parse(query).definitions[0] as OperationDefinitionNode).selectionSet;
+  
+  const selectionChunks = _.chunk(selections, chunkSize);
+  const chunks = selectionChunks.map((chunk) => print({ kind, loc: loc!, selections: chunk ?? [] }));
 
-  const chunks = await Promise.all(
-    Array.from(Array(totalChunks).keys()).map((i) => {
-      const chunk = items.slice(i * chunkSize, (i + 1) * chunkSize);
+  const requests = await Promise.all(chunks.map((chunk) => request<Response>(url, chunk)));
 
-      return request<Response>(url, queryBuilder(chunk));
-    })
-  );
-
-  return chunks.reduce((all, chunk) => ({ ...all, ...chunk }));
+  return requests.reduce((all, chunk) => ({ ...all, ...chunk }));
 };
 
 export const truncateStr = (str: string, length: number) => {
